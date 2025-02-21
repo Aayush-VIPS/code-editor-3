@@ -3,6 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const cors = require('cors');
+const { join } = require('node:path');
 const { Server } = require('socket.io');
 const Y = require('yjs');
 
@@ -10,19 +11,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Serve index.html for the root route
+app.get('/', (req, res) => {
+  res.sendFile(join(__dirname, 'index.html'));
+});
+
 // Import workspace (projects) API routes
 const projectsRoutes = require('./projects');
 app.use('/api/projects', projectsRoutes);
 
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-      origin: ["http://localhost:3000", "http://localhost:3002"],
-      methods: ["GET", "POST"]
-    }
-  });
-  
-  
+  cors: {
+    origin: ["http://localhost:3000", "http://localhost:3002"],
+    methods: ["GET", "POST"]
+  }
+});
+
 // In-memory storage for collaborative documents
 const docs = new Map();
 function getYDoc(docId) {
@@ -34,13 +39,16 @@ function getYDoc(docId) {
   }
   return ydoc;
 }
-const update = Y.encodeStateAsUpdate(ydoc);
-console.log(`Sending update, length: ${update.byteLength}`);
-socket.emit('document-update', update);
 
+// Socket.io connection handler
 io.on('connection', (socket) => {
   console.log("Client connected:", socket.id);
   
+  // Example chat message event
+  socket.on('chat message', (msg) => {
+    console.log('message: ' + msg);
+  });
+
   // Collaborative editing: join document room
   socket.on('join-document', (docId) => {
     socket.join(docId);
@@ -51,7 +59,11 @@ io.on('connection', (socket) => {
   
   socket.on('send-update', (docId, update) => {
     const ydoc = getYDoc(docId);
-    Y.applyUpdate(ydoc, update);
+    try {
+      Y.applyUpdate(ydoc, update);
+    } catch (error) {
+      console.error("Error applying update:", error);
+    }
     socket.to(docId).emit('document-update', update);
   });
   
